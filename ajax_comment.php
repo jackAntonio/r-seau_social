@@ -1,13 +1,23 @@
 <?php
+require 'security.php';
 session_start();
 require 'config.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!isset($_SESSION['user_id'], $_POST['post_id'], $_POST['comment'])) {
+    if (!isset($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Non connecté']);
+        exit;
+    }
+    if (!csrf_verify()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Token CSRF invalide']);
+        exit;
+    }
+    if (!isset($_POST['post_id'], $_POST['comment'])) {
         echo json_encode(['success' => false]);
         exit;
     }
-    $user_id = $_SESSION['user_id'];
+    $user_id = intval($_SESSION['user_id']);
     $post_id = intval($_POST['post_id']);
     $comment = trim($_POST['comment']);
     if ($comment === '') {
@@ -22,10 +32,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// Affichage des commentaires d'un post (GET)
+// Affichage des commentaires (GET)
 if (isset($_GET['post_id'])) {
     $post_id = intval($_GET['post_id']);
-    $stmt = $conn->prepare("SELECT c.*, u.nom, u.prenom, u.photo FROM comments c JOIN users u ON u.id = c.user_id WHERE c.post_id=? ORDER BY c.created_at ASC");
+    $stmt    = $conn->prepare("SELECT c.*, u.nom, u.prenom, u.photo FROM comments c JOIN users u ON u.id = c.user_id WHERE c.post_id=? ORDER BY c.created_at ASC");
     $stmt->bind_param("i", $post_id);
     $stmt->execute();
     $res = $stmt->get_result();

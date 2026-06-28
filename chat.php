@@ -200,6 +200,7 @@ $friend_photo = $friend_photo && file_exists($friend_photo) ? $friend_photo : "d
   </div>
   <div class="messages" id="chat-box"></div>
   <form class="input-area" id="chat-form" enctype="multipart/form-data" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
     <label title="Envoyer un fichier">
       <input type="file" name="file" id="file-input" accept="image/*,video/*,audio/*,.pdf,.doc,.docx">
       📎

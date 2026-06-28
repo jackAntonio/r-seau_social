@@ -1,4 +1,5 @@
 <?php
+require 'security.php';
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
@@ -388,7 +389,7 @@ body {
         <img src="<?= htmlspecialchars($user['photo'] ?: 'default-user.png') ?>" alt="profile" class="profile">
         <span class="user"><?= htmlspecialchars($user['nom']) ?></span>
         <a href="users.php">Membres</a>
-        <a href="login.php" style="background: #fff;color:#2563f8;">Déconnexion</a>
+        <a href="logout.php" style="background: #fff;color:#2563f8;">Déconnexion</a>
     </div>
 </div>
 <div class="wrapper">
@@ -419,6 +420,7 @@ body {
         <!-- Post bar -->
         <div class="postbar">
             <form id="statusForm" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                 <div class="me-row">
                     <img src="<?= htmlspecialchars($user['photo'] ?: 'default-user.png') ?>" class="profile">
                     <input type="text" name="content" placeholder="What's on your mind, <?= htmlspecialchars($user['nom']) ?>?" required>
@@ -468,6 +470,8 @@ body {
     <div class="right-col"></div>
 </div>
 <script>
+const CSRF = <?= json_encode(csrf_token()) ?>;
+
 document.getElementById('statusForm').onsubmit = function(e){
   e.preventDefault();
   let formData = new FormData(this);
@@ -477,7 +481,7 @@ document.getElementById('statusForm').onsubmit = function(e){
   }).then(r=>r.json()).then(res=>{
     if(res.success) {
       this.reset();
-      alert('Statut publié avec succès ! (Ajoute ici reload du feed AJAX)');
+      location.reload();
     } else {
       alert('Erreur : ' + (res.error||''));
     }
@@ -488,7 +492,7 @@ function likePost(id) {
   fetch('ajax_like.php', {
     method:'POST',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body: 'post_id='+id
+    body: 'post_id='+id+'&csrf_token='+encodeURIComponent(CSRF)
   }).then(r=>r.json()).then(res=>{
     if(res.success) {
       document.getElementById('like-count-'+id).textContent = res.likes;
@@ -500,7 +504,7 @@ function sharePost(id) {
   fetch('ajax_share.php', {
     method:'POST',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body: 'post_id='+id
+    body: 'post_id='+id+'&csrf_token='+encodeURIComponent(CSRF)
   }).then(r=>r.json()).then(res=>{
     if(res.success) {
       alert('Post partagé sur votre fil !');
@@ -511,6 +515,7 @@ function sharePost(id) {
 function addComment(form, postId) {
   let fd = new FormData(form);
   fd.append('post_id', postId);
+  fd.append('csrf_token', CSRF);
   fetch('ajax_comment.php', {
     method:'POST', body: fd
   }).then(r=>r.json()).then(res=>{

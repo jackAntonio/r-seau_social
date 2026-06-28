@@ -1,44 +1,47 @@
 <?php
+require 'security.php';
 session_start();
 require 'config.php';
 require_once 'send_mail.php';
 
-function is_friend($user_id, $other_id) {
-    global $conn;
-    $stmt = $conn->prepare("SELECT * FROM friends WHERE ((from_user=? AND to_user=?) OR (from_user=? AND to_user=?)) AND status='accepted'");
+if (!isset($_SESSION['user_id'])) { header('Location: login.php'); exit; }
+
+// Vérification CSRF
+if (!csrf_verify()) { header("Location: users.php?friend=error"); exit; }
+
+function is_friend(mysqli $conn, int $user_id, int $other_id): bool {
+    $stmt = $conn->prepare("SELECT id FROM friends WHERE ((from_user=? AND to_user=?) OR (from_user=? AND to_user=?)) AND status='accepted'");
     $stmt->bind_param("iiii", $user_id, $other_id, $other_id, $user_id);
     $stmt->execute();
     $stmt->store_result();
-    $is_friend = $stmt->num_rows > 0;
+    $res = $stmt->num_rows > 0;
     $stmt->close();
-    return $is_friend;
+    return $res;
 }
 
-if (!isset($_SESSION['user_id'])) { header('Location: login.php'); exit; }
-$user_id = $_SESSION['user_id'];
+$user_id = intval($_SESSION['user_id']);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['to_user'])) {
     $to_user = intval($_POST['to_user']);
-    if ($to_user != $user_id && !is_friend($user_id, $to_user)) {
-        // Ajout direct comme ami
+    if ($to_user > 0 && $to_user !== $user_id && !is_friend($conn, $user_id, $to_user)) {
         $stmt = $conn->prepare("INSERT IGNORE INTO friends (from_user, to_user, status) VALUES (?, ?, 'accepted')");
         $stmt->bind_param("ii", $user_id, $to_user);
         $stmt->execute();
         $stmt->close();
 
-        // Envoi email
-        $stmt = $conn->prepare("SELECT email, nom, prenom FROM users WHERE id = ?");
+        // Email de notification
+        $stmt = $conn->prepare("SELECT email, nom, prenom FROM users WHERE id=?");
         $stmt->bind_param("i", $to_user);
         $stmt->execute();
         $stmt->bind_result($to_email, $to_nom, $to_prenom);
         $stmt->fetch();
         $stmt->close();
 
-        $from_stmt = $conn->prepare("SELECT nom, prenom FROM users WHERE id = ?");
-        $from_stmt->bind_param("i", $user_id);
-        $from_stmt->execute();
-        $from_stmt->bind_result($from_nom, $from_prenom);
-        $from_stmt->fetch();
-        $from_stmt->close();
+        $stmt = $conn->prepare("SELECT nom, prenom FROM users WHERE id=?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $stmt->bind_result($from_nom, $from_prenom);
+        $stmt->fetch();
+        $stmt->close();
 
         $subject = "Demande d'amitié sur le réseau social";
         $message = "Bonjour $to_nom $to_prenom,\n\n"
@@ -52,4 +55,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['to_user'])) {
 }
 header("Location: users.php?friend=error");
 exit;
-?>

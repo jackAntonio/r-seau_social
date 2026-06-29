@@ -1,30 +1,22 @@
 <?php
+require 'security.php';
 session_start();
-if (!isset($_SESSION['user_id'])) {
-    die("Connecte-toi !");
-}
-
-$with = intval($_GET['with'] ?? 0);
-$type = $_GET['type'] ?? 'video'; // ou 'audio'
+if (!isset($_SESSION['user_id'])) { header('Location: login.php'); exit; }
 require 'config.php';
 
-// Récupérer l'ID PeerJS de l'ami
+$with = intval($_GET['with'] ?? 0);
+$type = in_array($_GET['type'] ?? '', ['video','audio']) ? $_GET['type'] : 'video';
+
 $friend_peer_id = $friend_nom = $friend_prenom = null;
 
 if ($with > 0) {
-    $stmt = $conn->prepare("SELECT peerjs_id, nom, prenom FROM users WHERE id=?");
-    if ($stmt === false) {
-        die("Erreur SQL (prepare): " . htmlspecialchars($conn->error));
-    }
-    $stmt->bind_param("i", $with);
-    if (!$stmt->execute()) {
-        die("Erreur SQL (execute): " . htmlspecialchars($stmt->error));
-    }
-    $stmt->bind_result($friend_peer_id, $friend_nom, $friend_prenom);
-    if (!$stmt->fetch()) {
-        die("Utilisateur non trouvé !");
-    }
-    $stmt->close();
+    $stmt = $pdo->prepare("SELECT peerjs_id, nom, prenom FROM users WHERE id=?");
+    $stmt->execute([$with]);
+    $row = $stmt->fetch();
+    if (!$row) { die("Utilisateur non trouvé !"); }
+    $friend_peer_id = $row['peerjs_id'];
+    $friend_nom     = $row['nom'];
+    $friend_prenom  = $row['prenom'];
 } else {
     die("ID de l'utilisateur à appeler manquant ou invalide.");
 }

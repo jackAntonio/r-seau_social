@@ -2,56 +2,56 @@
 require 'security.php';
 session_start();
 require 'config.php';
-require_once 'send_mail.php';
+require 'audit.php';
 
 if (!isset($_SESSION['user_id'])) { header('Location: login.php'); exit; }
-
-// Vérification CSRF
-if (!csrf_verify()) { header("Location: users.php?friend=error"); exit; }
-
-function is_friend(mysqli $conn, int $user_id, int $other_id): bool {
-    $stmt = $conn->prepare("SELECT id FROM friends WHERE ((from_user=? AND to_user=?) OR (from_user=? AND to_user=?)) AND status='accepted'");
-    $stmt->bind_param("iiii", $user_id, $other_id, $other_id, $user_id);
-    $stmt->execute();
-    $stmt->store_result();
-    $res = $stmt->num_rows > 0;
-    $stmt->close();
-    return $res;
-}
+if (!csrf_verify()) { header("Location: users.php?err=csrf"); exit; }
 
 $user_id = intval($_SESSION['user_id']);
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['to_user'])) {
+$action  = $_POST['action'] ?? 'request';
+
+if ($action === 'request' && isset($_POST['to_user'])) {
     $to_user = intval($_POST['to_user']);
-    if ($to_user > 0 && $to_user !== $user_id && !is_friend($conn, $user_id, $to_user)) {
-        $stmt = $conn->prepare("INSERT IGNORE INTO friends (from_user, to_user, status) VALUES (?, ?, 'accepted')");
-        $stmt->bind_param("ii", $user_id, $to_user);
-        $stmt->execute();
-        $stmt->close();
+    if ($to_user > 0 && $to_user !== $user_id) {
+        $pdo->prepare(
+            "INSERT INTO friends (from_user, to_user, status) VALUES (?,?,'pending')
+             ON CONFLICT (from_user, to_user) DO NOTHING"
+        )->execute([$user_id, $to_user]);
 
-        // Email de notification
-        $stmt = $conn->prepare("SELECT email, nom, prenom FROM users WHERE id=?");
-        $stmt->bind_param("i", $to_user);
-        $stmt->execute();
-        $stmt->bind_result($to_email, $to_nom, $to_prenom);
-        $stmt->fetch();
-        $stmt->close();
+        // Notification au destinataire
+        $from = $pdo->prepare("SELECT nom, prenom FROM users WHERE id=?");
+        $from->execute([$user_id]);
+        $fr = $from->fetch();
+        $pdo->prepare("INSERT INTO notifications (user_id, content, link) VALUES (?,?,?)")
+            ->execute([$to_user, "{$fr['nom']} {$fr['prenom']} vous a envoyé une demande d'ami", "users.php"]);
 
-        $stmt = $conn->prepare("SELECT nom, prenom FROM users WHERE id=?");
-        $stmt->bind_param("i", $user_id);
-        $stmt->execute();
-        $stmt->bind_result($from_nom, $from_prenom);
-        $stmt->fetch();
-        $stmt->close();
-
-        $subject = "Demande d'amitié sur le réseau social";
-        $message = "Bonjour $to_nom $to_prenom,\n\n"
-            . "$from_nom $from_prenom vient de vous ajouter en ami sur le réseau social !\n\n"
-            . "Vous pouvez discuter directement depuis la plateforme.";
-        sendValidationEmail($to_email, '', $subject, $message);
-
-        header("Location: users.php?friend=ok");
-        exit;
+        audit_log($pdo, 'friend_request', $user_id, 'user', $to_user);
+        header("Location: users.php?sent=1"); exit;
     }
 }
-header("Location: users.php?friend=error");
-exit;
+
+if ($action === 'accept' && isset($_POST['from_user'])) {
+    $from_user = intval($_POST['from_user']);
+    $pdo->prepare(
+        "UPDATE friends SET status='accepted' WHERE from_user=? AND to_user=? AND status='pending'"
+    )->execute([$from_user, $user_id]);
+
+    $from = $pdo->prepare("SELECT nom, prenom FROM users WHERE id=?");
+    $from->execute([$user_id]);
+    $fr = $from->fetch();
+    $pdo->prepare("INSERT INTO notifications (user_id, content, link) VALUES (?,?,?)")
+        ->execute([$from_user, "{$fr['nom']} {$fr['prenom']} a accepté votre demande d'ami", "chat.php?with={$user_id}"]);
+
+    audit_log($pdo, 'friend_accept', $user_id, 'user', $from_user);
+    header("Location: users.php?accepted=1"); exit;
+}
+
+if ($action === 'reject' && isset($_POST['from_user'])) {
+    $from_user = intval($_POST['from_user']);
+    $pdo->prepare(
+        "DELETE FROM friends WHERE from_user=? AND to_user=? AND status='pending'"
+    )->execute([$from_user, $user_id]);
+    header("Location: users.php"); exit;
+}
+
+header("Location: users.php");

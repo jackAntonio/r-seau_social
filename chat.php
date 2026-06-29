@@ -1,4 +1,5 @@
 <?php
+require 'security.php';
 session_start();
 require 'config.php';
 
@@ -6,24 +7,20 @@ require 'config.php';
 if (!isset($_SESSION['user_id'])) { header('Location: login.php'); exit; }
 $user_id = $_SESSION['user_id'];
 
-// Récupère mes infos (photo)
-$stmt = $conn->prepare("SELECT photo, nom, prenom FROM users WHERE id=?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$stmt->bind_result($my_photo, $my_nom, $my_prenom);
-$stmt->fetch();
-$stmt->close();
-$my_photo = $my_photo && file_exists($my_photo) ? $my_photo : "default-avatar.png";
+$stmt = $pdo->prepare("SELECT photo, nom, prenom FROM users WHERE id=?");
+$stmt->execute([$user_id]);
+$me_row = $stmt->fetch();
+$my_photo   = ($me_row['photo'] && file_exists($me_row['photo'])) ? $me_row['photo'] : 'default-user.png';
+$my_nom     = $me_row['nom'] ?? '';
+$my_prenom  = $me_row['prenom'] ?? '';
 
-// Récupère infos ami
 $with = intval($_GET['with'] ?? 0);
-$stmt = $conn->prepare("SELECT nom, prenom, photo FROM users WHERE id=?");
-$stmt->bind_param("i", $with);
-$stmt->execute();
-$stmt->bind_result($friend_nom, $friend_prenom, $friend_photo);
-$stmt->fetch();
-$stmt->close();
-$friend_photo = $friend_photo && file_exists($friend_photo) ? $friend_photo : "default-avatar.png";
+$stmt = $pdo->prepare("SELECT nom, prenom, photo FROM users WHERE id=?");
+$stmt->execute([$with]);
+$fr_row = $stmt->fetch();
+$friend_nom    = $fr_row['nom'] ?? 'Utilisateur';
+$friend_prenom = $fr_row['prenom'] ?? '';
+$friend_photo  = ($fr_row['photo'] && file_exists($fr_row['photo'])) ? $fr_row['photo'] : 'default-user.png';
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -210,67 +207,73 @@ $friend_photo = $friend_photo && file_exists($friend_photo) ? $friend_photo : "d
   </form>
 </div>
 <script>
-const chatBox = document.getElementById('chat-box');
+const chatBox  = document.getElementById('chat-box');
+const ME_ID    = <?= intval($user_id) ?>;
+const WITH_ID  = <?= intval($with) ?>;
+const MY_PHOTO = <?= json_encode($my_photo) ?>;
+const FR_PHOTO = <?= json_encode($friend_photo) ?>;
+const CSRF     = <?= json_encode(csrf_token()) ?>;
+
+let lastId = 0;
+
 function urlify(text) {
-  return text.replace(/(https?:\/\/[^\s]+)/g, function(url) {
-    return '<a href="' + url + '" target="_blank">' + url + '</a>';
-  });
+  return text.replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
 }
 function formatTime(ts) {
-  let d = new Date(ts.replace(' ', 'T'));
-  let h = d.getHours(), m = d.getMinutes();
-  let ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12; if (h==0) h=12;
-  return `${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]} ${h}:${m.toString().padStart(2,"0")} ${ampm}`;
+  const d = new Date(ts.replace(' ', 'T'));
+  const h = d.getHours(), m = d.getMinutes();
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12  = h % 12 || 12;
+  return `${["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"][d.getDay()]} ${h12}:${String(m).padStart(2,"0")} ${ampm}`;
 }
-function loadChat(scroll=true) {
-  fetch('ajax_chat.php?with=<?= $with ?>')
-    .then(r=>r.json())
-    .then(data=>{
-      let html = "";
-      data.forEach(msg=>{
-        let isMe = msg.sender_id == <?= $user_id ?>;
-        let avatar = isMe ? <?= json_encode($my_photo) ?> : <?= json_encode($friend_photo) ?>;
-        html += `<div class="bubble-row${isMe?' me':''}">`;
-        html += `<img class="avatar" src="${avatar}" alt="">`;
-        html += `<div>`;
-        html += `<div class="bubble">`;
-        // Images, videos, audios
-        if (msg.file_type && msg.file_type.startsWith('image/')) {
-          html += `<img src="${msg.file}" alt="Image envoyée">`;
-        } else if (msg.file_type && msg.file_type.startsWith('video/')) {
-          html += `<video controls src="${msg.file}"></video>`;
-        } else if (msg.file_type && msg.file_type.startsWith('audio/')) {
-          html += `<audio controls src="${msg.file}"></audio>`;
-        } else if (msg.file) {
-          html += `<a href="${msg.file}" target="_blank">📎 Fichier</a>`;
-        }
-        // Texte et liens
-        if (msg.content) html += urlify(msg.content.replace(/\n/g,'<br>'));
-        html += `</div>`;
-        html += `<div class="time">${formatTime(msg.created_at)}</div>`;
-        html += `</div></div>`;
-      });
-      chatBox.innerHTML = html;
-      if (scroll) setTimeout(()=>chatBox.scrollTop = chatBox.scrollHeight, 100);
-    });
+function appendMessage(msg) {
+  const isMe   = msg.sender_id == ME_ID;
+  const avatar = isMe ? MY_PHOTO : FR_PHOTO;
+  const row    = document.createElement('div');
+  row.className = `bubble-row${isMe ? ' me' : ''}`;
+  let inner = `<img class="avatar" src="${avatar}" alt=""><div><div class="bubble">`;
+  if (msg.file_type?.startsWith('image/'))  inner += `<img src="${msg.file}" alt="Image">`;
+  else if (msg.file_type?.startsWith('video/')) inner += `<video controls src="${msg.file}"></video>`;
+  else if (msg.file_type?.startsWith('audio/')) inner += `<audio controls src="${msg.file}"></audio>`;
+  else if (msg.file) inner += `<a href="${msg.file}" target="_blank">📎 Fichier</a>`;
+  if (msg.content) inner += urlify(msg.content.replace(/\n/g, '<br>'));
+  inner += `</div><div class="time">${formatTime(msg.created_at)}</div></div>`;
+  row.innerHTML = inner;
+  chatBox.appendChild(row);
+  chatBox.scrollTop = chatBox.scrollHeight;
+  lastId = Math.max(lastId, msg.id);
 }
-loadChat(true);
-setInterval(()=>loadChat(false), 2000);
+
+// Chargement initial
+fetch(`ajax_chat.php?with=${WITH_ID}`)
+  .then(r => r.json())
+  .then(msgs => {
+    msgs.forEach(appendMessage);
+  });
+
+// SSE pour les nouveaux messages en temps réel
+function connectSSE() {
+  const es = new EventSource(`sse_chat.php?with=${WITH_ID}&last_id=${lastId}`);
+  es.onmessage = e => {
+    const data = JSON.parse(e.data);
+    if (data.close) { es.close(); setTimeout(connectSSE, 1000); return; }
+    appendMessage(data);
+  };
+  es.onerror = () => { es.close(); setTimeout(connectSSE, 3000); };
+}
+connectSSE();
 
 document.getElementById('chat-form').onsubmit = function(e) {
   e.preventDefault();
-  let formData = new FormData(this);
-  fetch('ajax_chat.php?with=<?= $with ?>', {
-      method: 'POST',
-      body: formData
-  }).then(r=>r.json()).then(res=>{
+  const formData = new FormData(this);
+  fetch(`ajax_chat.php?with=${WITH_ID}`, { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(res => {
       if (res.success) {
-          document.getElementById('msg').value = '';
-          document.getElementById('file-input').value = '';
-          loadChat(true);
+        document.getElementById('msg').value = '';
+        document.getElementById('file-input').value = '';
       }
-  });
+    });
 }
 
 function startCall(type) {

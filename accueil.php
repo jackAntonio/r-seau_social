@@ -9,47 +9,25 @@ require 'config.php';
 
 $id = $_SESSION['user_id'];
 
-// Récupérer l'utilisateur connecté
-$stmt = $conn->prepare("SELECT * FROM users WHERE id=?");
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$stmt = $pdo->prepare("SELECT * FROM users WHERE id=?");
+$stmt->execute([$id]);
+$user = $stmt->fetch();
 
-// Vérifier si l'utilisateur connecté a une story (on suppose une table 'stories' avec user_id, image, created_at)
-$stmt = $conn->prepare("SELECT * FROM stories WHERE user_id=? ORDER BY created_at DESC LIMIT 1");
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$user_story = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$stmt = $pdo->prepare("SELECT * FROM stories WHERE user_id=? AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1");
+$stmt->execute([$id]);
+$user_story = $stmt->fetch();
 
-// Récupérer les stories des autres utilisateurs (1 par utilisateur, la plus récente)
-$stmt = $conn->prepare(
-    "SELECT s.*, u.nom, u.prenom, u.photo 
-    FROM stories s 
-    JOIN users u ON u.id = s.user_id 
-    WHERE s.user_id != ? 
-    AND s.created_at = (
-        SELECT MAX(s2.created_at) FROM stories s2 WHERE s2.user_id = s.user_id
-    )
-    ORDER BY s.created_at DESC"
+$stmt = $pdo->prepare(
+    "SELECT DISTINCT ON (s.user_id) s.*, u.nom, u.prenom, u.photo
+     FROM stories s JOIN users u ON u.id = s.user_id
+     WHERE s.user_id != ? AND s.expires_at > NOW()
+     ORDER BY s.user_id, s.created_at DESC"
 );
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$stories = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$stmt->execute([$id]);
+$stories = $stmt->fetchAll();
 
-// Exemple de récupération des posts (fil d'actualité) - à adapter selon ton besoin
-$stmt = $conn->prepare(
-    "SELECT p.*, u.nom, u.prenom, u.photo
-     FROM posts p
-     JOIN users u ON u.id = p.user_id
-     ORDER BY p.created_at DESC
-     LIMIT 10"
-);
-$stmt->execute();
-$posts = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+// Le fil d'actualité est chargé via pagination infinie (api_posts.php + IntersectionObserver)
+$posts = [];
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -57,6 +35,10 @@ $stmt->close();
     <meta charset="utf-8">
     <title>Accueil - Réseau Social</title>
     <meta name="viewport" content="width=1030">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563f8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Segoe+UI:400,700&display=swap">
     <style>
 /* Design Facebook-like, voir précédentes réponses */
@@ -342,10 +324,38 @@ body {
     font-weight: 600;
     cursor: pointer;
     transition: background .14s;
+    position: relative;
 }
 .feed-card .post-actions button:hover {
     background: #e8f0fe;
 }
+/* Sélecteur de réactions */
+.reaction-wrap { position: relative; display: inline-block; }
+.reaction-picker {
+    display: none;
+    position: absolute;
+    bottom: 38px;
+    left: 0;
+    background: #fff;
+    border-radius: 30px;
+    box-shadow: 0 4px 22px #0002;
+    padding: 6px 10px;
+    gap: 6px;
+    flex-direction: row;
+    z-index: 99;
+    white-space: nowrap;
+}
+.reaction-wrap:hover .reaction-picker,
+.reaction-wrap:focus-within .reaction-picker { display: flex; }
+.reaction-picker span {
+    font-size: 1.5em;
+    cursor: pointer;
+    transition: transform .15s;
+    padding: 2px;
+}
+.reaction-picker span:hover { transform: scale(1.4); }
+.like-btn { display: flex; align-items: center; gap: 5px; }
+.like-btn.reacted { background: #e8f0fe; color: #1a56db; }
 .feed-card .comments {
     margin: 6px 0 0 0;
     padding-left: 8px;
@@ -389,6 +399,9 @@ body {
         <img src="<?= htmlspecialchars($user['photo'] ?: 'default-user.png') ?>" alt="profile" class="profile">
         <span class="user"><?= htmlspecialchars($user['nom']) ?></span>
         <a href="users.php">Membres</a>
+        <a href="edit_profile.php">✏️ Profil</a>
+        <a href="totp_setup.php">🔐 2FA</a>
+        <a href="admin.php">⚙️ Admin</a>
         <a href="logout.php" style="background: #fff;color:#2563f8;">Déconnexion</a>
     </div>
 </div>
@@ -432,39 +445,14 @@ body {
                 </div>
             </form>
         </div>
-        <!-- Feed -->
+        <!-- Feed avec pagination infinie -->
         <div class="feed" id="feed">
-            <?php if (count($posts) == 0): ?>
-                <div style="text-align:center;color:#666;padding:30px 0;">Aucun post pour l’instant.</div>
-            <?php else: ?>
-                <?php foreach ($posts as $p): ?>
-                    <div class="feed-card" data-post="<?= $p['id'] ?>">
-                        <div class="author-row">
-                            <img src="<?= htmlspecialchars($p['photo'] ?: 'default-user.png') ?>" class="author-img" alt="">
-                            <span class="author-name"><?= htmlspecialchars($p['nom'].' '.$p['prenom']) ?></span>
-                            <span class="post-date"><?= date('d/m/Y H:i', strtotime($p['created_at'])) ?></span>
-                        </div>
-                        <div class="content"><?= nl2br(htmlspecialchars($p['content'])) ?></div>
-                        <?php if (!empty($p['media'])): ?>
-                            <?php if (preg_match('/\.(mp4|webm)$/i', $p['media'])): ?>
-                                <video class="post-img" controls src="<?= htmlspecialchars($p['media']) ?>"></video>
-                            <?php else: ?>
-                                <img class="post-img" src="<?= htmlspecialchars($p['media']) ?>">
-                            <?php endif; ?>
-                        <?php endif; ?>
-                        <div class="post-actions">
-                          <button onclick="likePost(<?= $p['id'] ?>)">👍 Like (<span id="like-count-<?= $p['id'] ?>">0</span>)</button>
-                          <button onclick="showComments(<?= $p['id'] ?>)">💬 Comment</button>
-                          <button onclick="sharePost(<?= $p['id'] ?>)">🔗 Share</button>
-                        </div>
-                        <div class="comments" id="comments-<?= $p['id'] ?>"></div>
-                        <form onsubmit="return addComment(this, <?= $p['id'] ?>)">
-                          <input type="text" name="comment" placeholder="Ecrire un commentaire...">
-                          <button type="submit">Envoyer</button>
-                        </form>
-                    </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
+            <div style="text-align:center;color:#666;padding:20px 0;" id="feed-loading">Chargement...</div>
+        </div>
+        <!-- Sentinelle IntersectionObserver -->
+        <div id="feed-sentinel" style="height:30px;margin-bottom:20px;"></div>
+        <div id="feed-end" style="text-align:center;color:#999;padding:20px;display:none;">
+            Vous avez tout vu !
         </div>
     </div>
     <div class="right-col"></div>
@@ -472,31 +460,137 @@ body {
 <script>
 const CSRF = <?= json_encode(csrf_token()) ?>;
 
+// ===== PAGINATION INFINIE =====
+let currentPage = 0;
+let isLoading   = false;
+let hasMore     = true;
+const feed      = document.getElementById('feed');
+const sentinel  = document.getElementById('feed-sentinel');
+const feedEnd   = document.getElementById('feed-end');
+
+function escHtml(s) {
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+
+function renderPost(p) {
+  const isVideo = p.media && /\.(mp4|webm)$/i.test(p.media);
+  const mediaHtml = p.media
+    ? (isVideo
+      ? `<video class="post-img" controls src="${escHtml(p.media)}"></video>`
+      : `<img class="post-img" src="${escHtml(p.media)}" alt="">`)
+    : '';
+
+  const card = document.createElement('div');
+  card.className = 'feed-card';
+  card.dataset.post = p.id;
+  card.innerHTML = `
+    <div class="author-row">
+      <img src="${escHtml(p.photo||'default-user.png')}" class="author-img" alt="">
+      <span class="author-name">${escHtml(p.nom+' '+p.prenom)}</span>
+      <span class="post-date">${escHtml(p.created_at)}</span>
+    </div>
+    <div class="content">${escHtml(p.content).replace(/\n/g,'<br>')}</div>
+    ${mediaHtml}
+    <div class="post-actions">
+      <div class="reaction-wrap">
+        <button class="like-btn" id="like-btn-${p.id}" onclick="reactPost(${p.id},'like')">
+          ${reactionIcon(p.my_reaction)} <span id="like-label-${p.id}">${reactionLabel(p)}</span>
+        </button>
+        <div class="reaction-picker">
+          <span title="J'aime"    onclick="reactPost(${p.id},'like')">👍</span>
+          <span title="J'adore"   onclick="reactPost(${p.id},'love')">❤️</span>
+          <span title="Haha"      onclick="reactPost(${p.id},'haha')">😂</span>
+          <span title="Wow"       onclick="reactPost(${p.id},'wow')">😮</span>
+          <span title="Triste"    onclick="reactPost(${p.id},'sad')">😢</span>
+          <span title="En colère" onclick="reactPost(${p.id},'angry')">😡</span>
+          <span title="Je n'aime pas" onclick="reactPost(${p.id},'dislike')">👎</span>
+        </div>
+      </div>
+      <button onclick="showComments(${p.id})">💬 Commenter</button>
+      <button onclick="sharePost(${p.id})">🔗 Partager</button>
+    </div>
+    <div class="comments" id="comments-${p.id}"></div>
+    <form onsubmit="return addComment(this,${p.id})">
+      <input type="text" name="comment" placeholder="Écrire un commentaire...">
+      <button type="submit">Envoyer</button>
+    </form>`;
+  return card;
+}
+
+function loadMore() {
+  if (isLoading || !hasMore) return;
+  isLoading = true;
+  currentPage++;
+  document.getElementById('feed-loading').style.display = 'block';
+
+  fetch(`api_posts.php?page=${currentPage}`)
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('feed-loading').style.display = 'none';
+      data.posts.forEach(p => feed.insertBefore(renderPost(p), document.getElementById('feed-loading')));
+      hasMore = data.has_more;
+      if (!hasMore) { sentinel.style.display = 'none'; feedEnd.style.display = 'block'; }
+      isLoading = false;
+    })
+    .catch(() => { isLoading = false; document.getElementById('feed-loading').style.display = 'none'; });
+}
+
+// IntersectionObserver pour déclencher le chargement au scroll
+const observer = new IntersectionObserver(entries => {
+  if (entries[0].isIntersecting) loadMore();
+}, { rootMargin: '200px' });
+observer.observe(sentinel);
+
+// Chargement initial
+loadMore();
+
+// ===== ACTIONS =====
 document.getElementById('statusForm').onsubmit = function(e){
   e.preventDefault();
-  let formData = new FormData(this);
-  fetch('ajax_post.php', {
-    method: 'POST',
-    body: formData
-  }).then(r=>r.json()).then(res=>{
-    if(res.success) {
-      this.reset();
-      location.reload();
-    } else {
-      alert('Erreur : ' + (res.error||''));
-    }
-  });
+  const fd = new FormData(this);
+  fetch('ajax_post.php', { method:'POST', body:fd })
+    .then(r => r.json())
+    .then(res => {
+      if (res.success) {
+        this.reset();
+        // Recharger le fil depuis le début
+        feed.innerHTML = '<div id="feed-loading" style="text-align:center;color:#666;padding:20px;">Chargement...</div>';
+        currentPage = 0; hasMore = true;
+        observer.observe(sentinel);
+        loadMore();
+      } else {
+        alert('Erreur : ' + (res.error||''));
+      }
+    });
 };
 
-function likePost(id) {
+const EMOJI_MAP = {like:'👍',love:'❤️',haha:'😂',wow:'😮',sad:'😢',angry:'😡',dislike:'👎'};
+
+function reactionIcon(r) { return r ? (EMOJI_MAP[r]||'👍') : '👍'; }
+
+function reactionLabel(p) {
+  const total = (p.r_like||0)+(p.r_love||0)+(p.r_haha||0)+(p.r_wow||0)+(p.r_sad||0)+(p.r_angry||0)+(p.r_dislike||0);
+  if (!total) return 'Réagir';
+  const parts = [];
+  for (const [k,e] of Object.entries(EMOJI_MAP)) if (p['r_'+k]>0) parts.push(e+' '+p['r_'+k]);
+  return parts.slice(0,3).join('  ');
+}
+
+function reactPost(id, reaction) {
   fetch('ajax_like.php', {
     method:'POST',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body: 'post_id='+id+'&csrf_token='+encodeURIComponent(CSRF)
+    body:`post_id=${id}&reaction=${reaction}&csrf_token=${encodeURIComponent(CSRF)}`
   }).then(r=>r.json()).then(res=>{
-    if(res.success) {
-      document.getElementById('like-count-'+id).textContent = res.likes;
-    }
+    if (!res.success) return;
+    const btn = document.getElementById('like-btn-'+id);
+    const lbl = document.getElementById('like-label-'+id);
+    if (btn) btn.firstChild.textContent = reactionIcon(res.my_reaction);
+    if (btn) btn.className = 'like-btn' + (res.my_reaction ? ' reacted' : '');
+    // Reconstruire le label depuis les counts
+    const p2 = {};
+    for (const [k,v] of Object.entries(res.counts||{})) p2['r_'+k]=v;
+    if (lbl) lbl.textContent = reactionLabel(p2);
   });
 }
 
@@ -504,36 +598,62 @@ function sharePost(id) {
   fetch('ajax_share.php', {
     method:'POST',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body: 'post_id='+id+'&csrf_token='+encodeURIComponent(CSRF)
+    body:`post_id=${id}&csrf_token=${encodeURIComponent(CSRF)}`
   }).then(r=>r.json()).then(res=>{
-    if(res.success) {
-      alert('Post partagé sur votre fil !');
-    }
+    if(res.success) alert('Post partagé !');
   });
 }
 
 function addComment(form, postId) {
-  let fd = new FormData(form);
+  const fd = new FormData(form);
   fd.append('post_id', postId);
   fd.append('csrf_token', CSRF);
-  fetch('ajax_comment.php', {
-    method:'POST', body: fd
-  }).then(r=>r.json()).then(res=>{
-    if(res.success) {
-      form.reset();
-      showComments(postId);
-    }
-  });
+  fetch('ajax_comment.php', { method:'POST', body:fd })
+    .then(r=>r.json()).then(res=>{
+      if(res.success) { form.reset(); showComments(postId); }
+    });
   return false;
 }
 
 function showComments(postId) {
   fetch('ajax_comment.php?post_id='+postId)
     .then(r=>r.text())
-    .then(html=>{
-      document.getElementById('comments-'+postId).innerHTML = html;
-    });
+    .then(html=>{ document.getElementById('comments-'+postId).innerHTML = html; });
 }
+
+// ===== PWA Service Worker =====
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+
+// ===== SSE NOTIFICATIONS =====
+(function() {
+  let lastNotifId = 0;
+  function connectNotifSSE() {
+    const es = new EventSource(`sse_notifications.php?last_id=${lastNotifId}`);
+    es.onmessage = e => {
+      const data = JSON.parse(e.data);
+      if (data.close) { es.close(); setTimeout(connectNotifSSE, 1000); return; }
+      lastNotifId = Math.max(lastNotifId, data.id);
+      // Afficher un toast de notification
+      showNotifToast(data.content, data.link);
+    };
+    es.onerror = () => { es.close(); setTimeout(connectNotifSSE, 5000); };
+  }
+  connectNotifSSE();
+
+  function showNotifToast(msg, link) {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1a3e72;color:#fff;padding:12px 20px;border-radius:12px;box-shadow:0 4px 20px #0003;z-index:9999;max-width:280px;font-size:0.97em;cursor:pointer;animation:fadeInUp .3s;';
+    toast.innerHTML = `🔔 ${msg.replace(/</g,'&lt;')}`;
+    if (link) toast.onclick = () => window.location.href = link;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+  }
+})();
 </script>
+<style>
+@keyframes fadeInUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:none; } }
+</style>
 </body>
 </html>

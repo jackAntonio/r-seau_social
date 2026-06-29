@@ -3,3 +3,5 @@ vendor/
 uploads/
 *.log
 .env
+composer.phar
+mail_dev.log

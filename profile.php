@@ -2,75 +2,62 @@
 require 'security.php';
 session_start();
 require 'config.php';
-
-function is_friend(mysqli $conn, int $user_id, int $other_id): bool {
-    $stmt = $conn->prepare("SELECT id FROM friends WHERE ((from_user=? AND to_user=?) OR (from_user=? AND to_user=?)) AND status='accepted'");
-    $stmt->bind_param("iiii", $user_id, $other_id, $other_id, $user_id);
-    $stmt->execute();
-    $stmt->store_result();
-    $res = $stmt->num_rows > 0;
-    $stmt->close();
-    return $res;
-}
+require 'functions.php';
 
 $me = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if (!$id) { echo "Profil introuvable."; exit; }
 
-$stmt = $conn->prepare("SELECT id, nom, prenom, photo, sexe, date_naissance, contact, email FROM users WHERE id=?");
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$stmt = $pdo->prepare("SELECT id, nom, prenom, photo, sexe, date_naissance, contact, email FROM users WHERE id=?");
+$stmt->execute([$id]);
+$user = $stmt->fetch();
 if (!$user) { echo "Utilisateur inconnu."; exit; }
 
-$is_friend = ($me && $id && is_friend($conn, $me, $id));
-$show_email = ($me === $id) || $is_friend; // Email visible uniquement pour soi ou ses amis
+$friend = ($me && $id) ? is_friend($pdo, $me, $id) : false;
+$show_email = ($me === $id) || $friend;
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <title>Profil de <?= htmlspecialchars($user['nom']) ?></title>
-    <link rel="stylesheet" href="profile-card.css">
+  <meta charset="UTF-8">
+  <title>Profil de <?= htmlspecialchars($user['nom']) ?></title>
+  <link rel="stylesheet" href="profile-card.css">
 </head>
 <body>
-    <div style="text-align:center;margin-top:12px;">
-      <img src="site-logo.png" alt="Logo du site" style="max-width:90px;">
-    </div>
-    <div class="container d-flex justify-content-center">
-        <div class="card p-3 py-4">
-            <div class="text-center">
-                <img src="<?= htmlspecialchars($user['photo'] ?: 'default-user.png') ?>" class="profile-pic" alt="Photo de profil">
-                <h3 class="mt-2"><?= htmlspecialchars($user['nom']) . ' ' . htmlspecialchars($user['prenom']) ?></h3>
-                <?php if ($show_email): ?>
-                    <span class="mt-1 clearfix"><?= htmlspecialchars($user['email']) ?></span>
-                <?php endif; ?>
-                <div class="row mt-3 mb-3" style="display: flex; justify-content: center;">
-                    <div class="col-md-4"><h5>Sexe</h5><span class="num"><?= htmlspecialchars($user['sexe']) ?></span></div>
-                    <div class="col-md-4"><h5>Naissance</h5><span class="num"><?= htmlspecialchars($user['date_naissance']) ?></span></div>
-                    <?php if ($show_email): ?>
-                    <div class="col-md-4"><h5>Contact</h5><span class="num"><?= htmlspecialchars($user['contact']) ?></span></div>
-                    <?php endif; ?>
-                </div>
-                <hr class="line">
-                <?php if ($me && $me !== $id): ?>
-                    <?php if (!$is_friend): ?>
-                        <form method="post" action="friend_request.php" style="display:inline;">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="to_user" value="<?= $id ?>">
-                            <button type="submit" class="profile_button">Demander en ami</button>
-                        </form>
-                    <?php else: ?>
-                        <a href="chat.php?with=<?= $id ?>" class="profile_button">Discuter 💬</a>
-                    <?php endif; ?>
-                <?php elseif (!$me): ?>
-                    <p><a href="login.php">Connectez-vous pour interagir</a></p>
-                <?php endif; ?>
-                <br><br>
-                <a href="<?= $me ? 'users.php' : 'login.php' ?>" class="profile_button">Retour</a>
-            </div>
+  <div style="text-align:center;margin-top:12px;"><img src="site-logo.png" alt="Logo" style="max-width:90px;"></div>
+  <div class="container d-flex justify-content-center">
+    <div class="card p-3 py-4">
+      <div class="text-center">
+        <img src="<?= htmlspecialchars($user['photo'] ?: 'default-user.png') ?>" class="profile-pic" alt="">
+        <h3 class="mt-2"><?= htmlspecialchars($user['nom'] . ' ' . $user['prenom']) ?></h3>
+        <?php if ($show_email): ?>
+          <span class="mt-1 clearfix"><?= htmlspecialchars($user['email']) ?></span>
+        <?php endif; ?>
+        <div class="row mt-3 mb-3" style="display:flex;justify-content:center;">
+          <div class="col-md-4"><h5>Sexe</h5><span class="num"><?= htmlspecialchars($user['sexe']) ?></span></div>
+          <div class="col-md-4"><h5>Naissance</h5><span class="num"><?= htmlspecialchars($user['date_naissance']) ?></span></div>
+          <?php if ($show_email): ?>
+            <div class="col-md-4"><h5>Contact</h5><span class="num"><?= htmlspecialchars($user['contact']) ?></span></div>
+          <?php endif; ?>
         </div>
+        <hr class="line">
+        <?php if ($me && $me !== $id): ?>
+          <?php if (!$friend): ?>
+            <form method="post" action="friend_request.php" style="display:inline;">
+              <?= csrf_field() ?>
+              <input type="hidden" name="to_user" value="<?= $id ?>">
+              <button type="submit" class="profile_button">Demander en ami</button>
+            </form>
+          <?php else: ?>
+            <a href="chat.php?with=<?= $id ?>" class="profile_button">Discuter 💬</a>
+          <?php endif; ?>
+        <?php elseif (!$me): ?>
+          <p><a href="login.php">Connectez-vous pour interagir</a></p>
+        <?php endif; ?>
+        <br><br>
+        <a href="<?= $me ? 'users.php' : 'login.php' ?>" class="profile_button">Retour</a>
+      </div>
     </div>
+  </div>
 </body>
 </html>

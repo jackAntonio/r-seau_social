@@ -1,0 +1,26 @@
+{
+  "name": "Réseau Social",
+  "short_name": "RéseauSocial",
+  "description": "Réseau social privé – connectez-vous avec vos amis",
+  "start_url": "/accueil.php",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#2563f8",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["social", "communication"],
+  "lang": "fr"
+}

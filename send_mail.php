@@ -15,7 +15,7 @@ function sendValidationEmail(string $to, string|int $code, string $subject = '',
     }
 
     require_once __DIR__ . '/vendor/autoload.php';
-    require_once __DIR__ . '/secrets.php';
+    // Les constantes SMTP_* sont déjà définies par config.php (getenv en prod)
 
     $mail = new PHPMailer(true);
     try {

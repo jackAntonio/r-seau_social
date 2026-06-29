@@ -1,7 +1,7 @@
 <?php
 if (php_sapi_name() !== 'cli') {
-    require 'secrets.php';
-    $secret = defined('CRON_SECRET') ? CRON_SECRET : null;
+    // En prod : CRON_SECRET via variable d'environnement
+    $secret = getenv('CRON_SECRET') ?: (defined('CRON_SECRET') ? CRON_SECRET : null);
     $given  = $_GET['key'] ?? $_SERVER['HTTP_X_CRON_SECRET'] ?? '';
     if (!$secret || !hash_equals($secret, $given)) { http_response_code(403); exit("Accès refusé."); }
 }

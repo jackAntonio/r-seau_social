@@ -8,7 +8,7 @@ $me = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if (!$id) { echo "Profil introuvable."; exit; }
 
-$stmt = $pdo->prepare("SELECT id, nom, prenom, photo, sexe, date_naissance, contact, email FROM users WHERE id=?");
+$stmt = $pdo->prepare("SELECT id, nom, prenom, photo, sexe, date_naissance, contact, email, bio FROM users WHERE id=?");
 $stmt->execute([$id]);
 $user = $stmt->fetch();
 if (!$user) { echo "Utilisateur inconnu."; exit; }
@@ -33,6 +33,9 @@ $show_email = ($me === $id) || $friend;
         <?php if ($show_email): ?>
           <span class="mt-1 clearfix"><?= htmlspecialchars($user['email']) ?></span>
         <?php endif; ?>
+        <?php if (!empty($user['bio'])): ?>
+          <p class="bio" style="font-style:italic;color:#555;margin:12px auto;max-width:380px;line-height:1.4;"><?= nl2br(htmlspecialchars($user['bio'])) ?></p>
+        <?php endif; ?>
         <div class="row mt-3 mb-3" style="display:flex;justify-content:center;">
           <div class="col-md-4"><h5>Sexe</h5><span class="num"><?= htmlspecialchars($user['sexe']) ?></span></div>
           <div class="col-md-4"><h5>Naissance</h5><span class="num"><?= htmlspecialchars($user['date_naissance']) ?></span></div>
@@ -41,7 +44,9 @@ $show_email = ($me === $id) || $friend;
           <?php endif; ?>
         </div>
         <hr class="line">
-        <?php if ($me && $me !== $id): ?>
+        <?php if ($me && $me === $id): ?>
+          <a href="edit_profile.php" class="profile_button" style="background:#2563f8;">✏️ Modifier mon profil</a>
+        <?php elseif ($me && $me !== $id): ?>
           <?php if (!$friend): ?>
             <form method="post" action="friend_request.php" style="display:inline;">
               <?= csrf_field() ?>

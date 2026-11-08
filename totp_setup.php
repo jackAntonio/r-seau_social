@@ -17,7 +17,7 @@ $message = $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['disable_2fa'])) {
     if (!csrf_verify()) { $error = "Requête invalide."; goto render; }
-    $pdo->prepare("UPDATE users SET totp_enabled=FALSE, totp_secret=NULL WHERE id=?")->execute([$user_id]);
+    $pdo->prepare("UPDATE users SET totp_enabled=0, totp_secret=NULL WHERE id=?")->execute([$user_id]);
     audit_log($pdo, '2fa_disabled', $user_id, 'user', $user_id);
     $totp_enabled = false; $message = "2FA désactivé."; goto render;
 }
@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['totp_code'])) {
     if (!csrf_verify()) { $error = "Requête invalide."; goto render; }
     $code = preg_replace('/\D/', '', $_POST['totp_code'] ?? '');
     if (TOTP::verify($pending_secret, $code)) {
-        $pdo->prepare("UPDATE users SET totp_secret=?, totp_enabled=TRUE WHERE id=?")
+        $pdo->prepare("UPDATE users SET totp_secret=?, totp_enabled=1 WHERE id=?")
             ->execute([$pending_secret, $user_id]);
         unset($_SESSION['totp_pending_secret']);
         audit_log($pdo, '2fa_enabled', $user_id, 'user', $user_id);

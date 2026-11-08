@@ -33,9 +33,13 @@ if (isset($_POST['like'], $_SESSION['user_id'])) {
     $user_id = intval($_SESSION['user_id']);
     $post_id = intval($_POST['post_id'] ?? 0);
     $type    = in_array($_POST['like'], ['like','dislike']) ? $_POST['like'] : 'like';
-    $pdo->prepare(
-        "INSERT INTO post_likes (post_id, user_id, type) VALUES (?,?,?) ON CONFLICT (post_id, user_id) DO UPDATE SET type=?"
-    )->execute([$post_id, $user_id, $type, $type]);
+    $chk = $pdo->prepare("SELECT id FROM post_likes WHERE post_id=? AND user_id=?");
+    $chk->execute([$post_id, $user_id]);
+    if ($chk->fetch()) {
+        $pdo->prepare("UPDATE post_likes SET type=? WHERE post_id=? AND user_id=?")->execute([$type, $post_id, $user_id]);
+    } else {
+        $pdo->prepare("INSERT INTO post_likes (post_id, user_id, type) VALUES (?,?,?)")->execute([$post_id, $user_id, $type]);
+    }
     $owner = $pdo->prepare("SELECT user_id FROM posts WHERE id=?");
     $owner->execute([$post_id]);
     $oid = intval($owner->fetchColumn());

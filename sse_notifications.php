@@ -7,6 +7,9 @@ if (!isset($_SESSION['user_id'])) { http_response_code(401); exit; }
 $user_id = intval($_SESSION['user_id']);
 $last_id = intval($_GET['last_id'] ?? 0);
 
+// Libérer le verrou de session PHP pour ne pas bloquer les autres requêtes de l'utilisateur
+session_write_close();
+
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache');
 header('X-Accel-Buffering: no');

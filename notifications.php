@@ -6,7 +6,7 @@ require 'config.php';
 if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit; }
 $user_id = intval($_SESSION['user_id']);
 
-$pdo->prepare("UPDATE notifications SET is_read=TRUE WHERE user_id=?")->execute([$user_id]);
+$pdo->prepare("UPDATE notifications SET is_read=1 WHERE user_id=?")->execute([$user_id]);
 $stmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 40");
 $stmt->execute([$user_id]);
 $notifs = $stmt->fetchAll();

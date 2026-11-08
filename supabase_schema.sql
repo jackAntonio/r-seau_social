@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_verified     BOOLEAN DEFAULT FALSE,
     date_naissance  DATE,
     adresse         TEXT DEFAULT '',
+    bio             TEXT DEFAULT '',
+    peerjs_id       VARCHAR(100) DEFAULT NULL,
     totp_secret     VARCHAR(64) DEFAULT NULL,
     totp_enabled    BOOLEAN DEFAULT FALSE,
     role            VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user','moderateur','admin')),
@@ -43,12 +45,12 @@ CREATE TABLE IF NOT EXISTS comments (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Likes (table posts_likes pour le feed.php avec type like/dislike)
+-- Likes (table post_likes avec 7 types de réactions)
 CREATE TABLE IF NOT EXISTS post_likes (
     id      SERIAL PRIMARY KEY,
     post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type    VARCHAR(10) DEFAULT 'like' CHECK (type IN ('like','dislike')),
+    type    VARCHAR(20) DEFAULT 'like' CHECK (type IN ('like','love','haha','wow','sad','angry','dislike')),
     UNIQUE (post_id, user_id)
 );
 

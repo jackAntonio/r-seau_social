@@ -12,7 +12,7 @@ function audit_log(PDO $pdo, string $action, ?int $user_id = null, ?string $targ
 }
 
 function is_rate_limited(PDO $pdo, string $ip, int $max = 5, int $window_minutes = 60): bool {
-    $since = date('Y-m-d H:i:sP', strtotime("-{$window_minutes} minutes"));
+    $since = date('Y-m-d H:i:s', strtotime("-{$window_minutes} minutes"));
     $stmt  = $pdo->prepare(
         "SELECT COUNT(*) FROM login_attempts WHERE ip=? AND attempted_at >= ?"
     );
@@ -26,5 +26,6 @@ function record_attempt(PDO $pdo, string $ip, string $email): void {
 }
 
 function cleanup_attempts(PDO $pdo): void {
-    $pdo->exec("DELETE FROM login_attempts WHERE attempted_at < NOW() - INTERVAL '2 hours'");
+    $cutoff = date('Y-m-d H:i:s', time() - 7200);
+    $pdo->prepare("DELETE FROM login_attempts WHERE attempted_at < ?")->execute([$cutoff]);
 }

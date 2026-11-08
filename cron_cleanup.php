@@ -20,10 +20,12 @@ foreach ($expired as $s) {
 }
 
 // Nettoyer les tentatives de login > 2h
-$pdo->exec("DELETE FROM login_attempts WHERE attempted_at < NOW() - INTERVAL '2 hours'");
+$two_hours_ago = date('Y-m-d H:i:s', time() - 7200);
+$pdo->prepare("DELETE FROM login_attempts WHERE attempted_at < ?")->execute([$two_hours_ago]);
 
 // Nettoyer les logs d'audit > 90 jours
-$pdo->exec("DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '90 days'");
+$ninety_days_ago = date('Y-m-d H:i:s', time() - (90 * 86400));
+$pdo->prepare("DELETE FROM audit_logs WHERE created_at < ?")->execute([$ninety_days_ago]);
 
 $log = date('Y-m-d H:i:s') . " | Stories supprimées: {$deleted}\n";
 file_put_contents(__DIR__ . '/cron.log', $log, FILE_APPEND);

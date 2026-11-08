@@ -29,10 +29,12 @@ function is_friend(PDO $pdo, int $user_id, int $other_id): bool {
 
 function send_friend_request(PDO $pdo, int $from, int $to): bool {
     if (is_friend($pdo, $from, $to)) return false;
-    $stmt = $pdo->prepare(
-        "INSERT INTO friends (from_user, to_user, status) VALUES (?, ?, 'accepted') ON CONFLICT (from_user, to_user) DO NOTHING"
-    );
-    $stmt->execute([$from, $to]);
+    $chk = $pdo->prepare("SELECT id FROM friends WHERE from_user=? AND to_user=?");
+    $chk->execute([$from, $to]);
+    if (!$chk->fetch()) {
+        $stmt = $pdo->prepare("INSERT INTO friends (from_user, to_user, status) VALUES (?, ?, 'accepted')");
+        $stmt->execute([$from, $to]);
+    }
     return true;
 }
 

@@ -21,7 +21,7 @@ $stmt = $pdo->prepare("
         (f.to_user = ? AND f.from_user = u.id)
     )
     WHERE u.id != ?
-      AND (? = '' OR u.nom ILIKE ? OR u.prenom ILIKE ? OR CONCAT(u.nom,' ',u.prenom) ILIKE ?)
+      AND (? = '' OR LOWER(u.nom) LIKE LOWER(?) OR LOWER(u.prenom) LIKE LOWER(?) OR LOWER(CONCAT(u.nom,' ',u.prenom)) LIKE LOWER(?))
     ORDER BY u.nom ASC
 ");
 $stmt->execute([$user_id, $user_id, $user_id, $search, $search_param, $search_param, $search_param]);

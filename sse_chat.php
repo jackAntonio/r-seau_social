@@ -14,6 +14,9 @@ $chk = $pdo->prepare("SELECT id FROM friends WHERE ((from_user=? AND to_user=?) 
 $chk->execute([$user_id, $with, $with, $user_id]);
 if (!$chk->fetch()) { http_response_code(403); exit; }
 
+// Libérer le verrou de session PHP pour ne pas bloquer les autres requêtes de l'utilisateur
+session_write_close();
+
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache');
 header('X-Accel-Buffering: no');

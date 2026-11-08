@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $file_path = Storage::store($_FILES['file'], 'chat', $all);
         if ($file_path) {
             $finfo     = new finfo(FILEINFO_MIME_TYPE);
-            $file_type = $finfo->file($_FILES['file']['tmp_name']);
+            $file_type = $finfo->file($file_path);
         }
     }
 

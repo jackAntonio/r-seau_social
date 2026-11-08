@@ -3,6 +3,7 @@ require 'security.php';
 session_start();
 require 'config.php';
 require 'roles.php';
+require 'storage.php';
 require 'audit.php';
 
 if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit; }
@@ -30,7 +31,7 @@ if (isset($_POST['delete_post'])) {
 
 if (isset($_POST['ban_user'])) {
     $uid = intval($_POST['ban_user']);
-    $pdo->prepare("UPDATE users SET is_verified=FALSE WHERE id=?")->execute([$uid]);
+    $pdo->prepare("UPDATE users SET is_verified=0 WHERE id=?")->execute([$uid]);
     audit_log($pdo, 'admin_ban_user', $admin_id, 'user', $uid);
     $message = "Utilisateur banni.";
 }

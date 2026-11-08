@@ -220,7 +220,7 @@ if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
 
 $stmt = $pdo->prepare(
     "INSERT INTO users (photo, nom, prenom, email, sexe, contact, password, code, is_verified, date_naissance, adresse)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE, ?, ?)"
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
 );
 
 try {
@@ -231,7 +231,8 @@ try {
     header("Location: verify.php?email=" . urlencode($email));
     exit;
 } catch (PDOException $e) {
-    if (str_contains($e->getMessage(), 'unique') || str_contains($e->getMessage(), 'duplicate')) {
+    $msg = strtolower($e->getMessage());
+    if (str_contains($msg, 'unique') || str_contains($msg, 'duplicate') || str_contains($msg, '1062')) {
         header("Location: register.php?error=email");
         exit;
     }

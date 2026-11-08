@@ -23,10 +23,11 @@ $current = $chk->fetchColumn();
 if ($current === $reaction) {
     $pdo->prepare("DELETE FROM post_likes WHERE user_id=? AND post_id=?")->execute([$user_id, $post_id]);
     $my_reaction = null;
+} elseif ($current) {
+    $pdo->prepare("UPDATE post_likes SET type=? WHERE user_id=? AND post_id=?")->execute([$reaction, $user_id, $post_id]);
+    $my_reaction = $reaction;
 } else {
-    $pdo->prepare("INSERT INTO post_likes (user_id, post_id, type) VALUES (?,?,?)
-                   ON CONFLICT (post_id, user_id) DO UPDATE SET type=EXCLUDED.type")
-        ->execute([$user_id, $post_id, $reaction]);
+    $pdo->prepare("INSERT INTO post_likes (user_id, post_id, type) VALUES (?,?,?)")->execute([$user_id, $post_id, $reaction]);
     $my_reaction = $reaction;
 }
 

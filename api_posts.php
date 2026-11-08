@@ -11,26 +11,27 @@ $per_page = 10;
 $offset   = ($page - 1) * $per_page;
 $me       = intval($_SESSION['user_id']);
 
-// Une seule requête avec agrégation des réactions (élimine le N+1)
+// Requête avec agrégation ANSI SQL compatible MySQL et PostgreSQL
 $stmt = $pdo->prepare("
     SELECT p.id, p.content, p.media, p.created_at,
            u.id AS user_id, u.nom, u.prenom, u.photo,
-           COUNT(pl.id) FILTER (WHERE pl.type='like')    AS r_like,
-           COUNT(pl.id) FILTER (WHERE pl.type='love')    AS r_love,
-           COUNT(pl.id) FILTER (WHERE pl.type='haha')    AS r_haha,
-           COUNT(pl.id) FILTER (WHERE pl.type='wow')     AS r_wow,
-           COUNT(pl.id) FILTER (WHERE pl.type='sad')     AS r_sad,
-           COUNT(pl.id) FILTER (WHERE pl.type='angry')   AS r_angry,
-           COUNT(pl.id) FILTER (WHERE pl.type='dislike') AS r_dislike,
+           (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS comment_count,
+           COUNT(CASE WHEN pl.type='like' THEN 1 END)    AS r_like,
+           COUNT(CASE WHEN pl.type='love' THEN 1 END)    AS r_love,
+           COUNT(CASE WHEN pl.type='haha' THEN 1 END)    AS r_haha,
+           COUNT(CASE WHEN pl.type='wow' THEN 1 END)     AS r_wow,
+           COUNT(CASE WHEN pl.type='sad' THEN 1 END)     AS r_sad,
+           COUNT(CASE WHEN pl.type='angry' THEN 1 END)   AS r_angry,
+           COUNT(CASE WHEN pl.type='dislike' THEN 1 END) AS r_dislike,
            MAX(CASE WHEN pl.user_id=? THEN pl.type END)  AS my_reaction
     FROM posts p
     JOIN users u ON p.user_id = u.id
     LEFT JOIN post_likes pl ON pl.post_id = p.id
-    GROUP BY p.id, u.id, u.nom, u.prenom, u.photo
+    GROUP BY p.id, u.id, u.nom, u.prenom, u.photo, p.content, p.media, p.created_at
     ORDER BY p.created_at DESC
-    LIMIT ? OFFSET ?
+    LIMIT " . intval($per_page) . " OFFSET " . intval($offset) . "
 ");
-$stmt->execute([$me, $per_page, $offset]);
+$stmt->execute([$me]);
 $posts = $stmt->fetchAll();
 
 $total    = intval($pdo->query("SELECT COUNT(*) FROM posts")->fetchColumn());

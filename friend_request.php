@@ -13,10 +13,12 @@ $action  = $_POST['action'] ?? 'request';
 if ($action === 'request' && isset($_POST['to_user'])) {
     $to_user = intval($_POST['to_user']);
     if ($to_user > 0 && $to_user !== $user_id) {
-        $pdo->prepare(
-            "INSERT INTO friends (from_user, to_user, status) VALUES (?,?,'pending')
-             ON CONFLICT (from_user, to_user) DO NOTHING"
-        )->execute([$user_id, $to_user]);
+        $chk = $pdo->prepare("SELECT id FROM friends WHERE from_user=? AND to_user=?");
+        $chk->execute([$user_id, $to_user]);
+        if (!$chk->fetch()) {
+            $pdo->prepare("INSERT INTO friends (from_user, to_user, status) VALUES (?,?,'pending')")
+                ->execute([$user_id, $to_user]);
+        }
 
         // Notification au destinataire
         $from = $pdo->prepare("SELECT nom, prenom FROM users WHERE id=?");

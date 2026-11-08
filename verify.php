@@ -18,12 +18,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         goto render;
     }
 
-    $stmt = $pdo->prepare("SELECT code FROM users WHERE email=? AND is_verified=FALSE");
+    $stmt = $pdo->prepare("SELECT code FROM users WHERE email=? AND (is_verified=0 OR is_verified=FALSE)");
     $stmt->execute([$email]);
     $row = $stmt->fetch();
 
     if ($row && hash_equals((string)$row['code'], (string)$code)) {
-        $upd = $pdo->prepare("UPDATE users SET is_verified=TRUE WHERE email=?");
+        $upd = $pdo->prepare("UPDATE users SET is_verified=1 WHERE email=?");
         $upd->execute([$email]);
         header("Location: login.php?verifie=ok");
         exit;
